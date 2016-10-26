@@ -8,6 +8,7 @@
         'read_interval': 60,
         'file_logging': True,
         'remote_collector': False
+        'use_fqdn': True,
     },
     'Debian': {
         'pkgs': ['collectd-core', 'snmp', 'python-yaml'],
@@ -17,6 +18,7 @@
         'read_interval': 60,
         'file_logging': True,
         'remote_collector': False
+        'use_fqdn': True,
     },
     'RedHat': {
         'pkgs': ['collectd', 'collectd-ping', 'net-snmp', 'PyYAML'],
@@ -26,5 +28,6 @@
         'read_interval': 60,
         'file_logging': True,
         'remote_collector': False
+        'use_fqdn': True,
     },
 }, merge=salt['pillar.get']('collectd:client')) %}
