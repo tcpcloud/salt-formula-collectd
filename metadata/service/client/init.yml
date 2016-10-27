@@ -7,3 +7,4 @@ parameters:
     client:
       enabled: true
       read_interval: 60
+      use_fqdn: true
