@@ -7,16 +7,18 @@
         'config_dir': '/etc/collectd.d',
         'read_interval': 60,
         'file_logging': True,
-        'remote_collector': False
+        'remote_collector': False,
+        'use_fqdn': True,
     },
     'Debian': {
-        'pkgs': ['collectd-core', 'snmp', 'python-yaml', 'libpython2.7'],
+        'pkgs': ['collectd-core', 'snmp', 'python-yaml', 'libpython2.7', 'python-simplejson'],
         'service': 'collectd',
         'config_file': '/etc/collectd/collectd.conf',
         'config_dir': '/etc/collectd/conf.d',
         'read_interval': 60,
         'file_logging': True,
-        'remote_collector': False
+        'remote_collector': False,
+        'use_fqdn': True,
     },
     'RedHat': {
         'pkgs': ['collectd', 'collectd-ping', 'net-snmp', 'PyYAML'],
@@ -25,6 +27,7 @@
         'config_dir': '/etc/collectd.d',
         'read_interval': 60,
         'file_logging': True,
-        'remote_collector': False
+        'remote_collector': False,
+        'use_fqdn': True,
     },
 }, merge=salt['pillar.get']('collectd:client')) %}

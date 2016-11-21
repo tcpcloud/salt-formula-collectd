@@ -55,15 +55,37 @@ collectd_client_grains_dir:
   file.recurse:
   - source: salt://collectd/files/plugin
 
-{%- set service_grains = {'collectd': {'plugin': {}}} %}
+{%- set service_grains = {'collectd': {'remote_plugin': {}, 'local_plugin': {}}} %}
+
 {%- for service_name, service in pillar.items() %}
 {%- if service.get('_support', {}).get('collectd', {}).get('enabled', False) %}
+
 {%- set grains_fragment_file = service_name+'/meta/collectd.yml' %}
-{%- macro load_grains_file() %}{% include grains_fragment_file %}{% endmacro %}
+{%- macro load_grains_file() %}{% include grains_fragment_file ignore missing %}{% endmacro %}
 {%- set grains_yaml = load_grains_file()|load_yaml %}
-{%- set _dummy = service_grains.collectd.plugin.update(grains_yaml.plugin) %}
+
+{%- if grains_yaml is mapping %}
+{%- set service_grains = salt['grains.filter_by']({'default': service_grains}, merge={'collectd': grains_yaml}) %}
+{%- endif %}
+
 {%- endif %}
 {%- endfor %}
+
+{%- set remote_plugin = {} %}
+
+{%- if client.remote_collector %}
+
+{%- for node_name, node_grains in salt['mine.get']('*', 'grains.items').iteritems() %}
+
+{%- if node_grains.collectd is defined %}
+
+{%- set remote_plugin = salt['grains.filter_by']({'default': remote_plugin}, merge=node_grains.collectd.get('remote_plugin', {})) %}
+
+{%- endif %}
+
+{%- endfor %}
+
+{%- endif %}
 
 collectd_client_grain:
   file.managed:
@@ -86,9 +108,9 @@ collectd_client_grain_validity_check:
   - watch:
     - file: collectd_client_grain
 
-{%- for plugin_name, plugin in service_grains.collectd.get('plugin', {}).iteritems() %}
+{%- for plugin_name, plugin in service_grains.collectd.local_plugin.iteritems() %}
 
-{%- if (plugin.get('execution', 'local') == 'local' or client.remote_collector) and plugin.get('plugin', 'native') not in ['python'] %}
+{%- if plugin.get('plugin', 'native') not in ['python'] %}
 
 {{ client.config_dir }}/{{ plugin_name }}.conf:
   file.managed:
@@ -112,6 +134,37 @@ collectd_client_grain_validity_check:
 {%- endif %}
 
 {%- endfor %}
+
+{%- if client.remote_collector %}
+
+{%- for plugin_name, plugin in remote_plugin.iteritems() %}
+
+{%- if plugin.get('plugin', 'native') not in ['python'] %}
+
+{{ client.config_dir }}/{{ plugin_name }}.conf:
+  file.managed:
+  {%- if plugin.template is defined %}
+  - source: salt://{{ plugin.template }}
+  - template: jinja
+  - defaults:
+    plugin: {{ plugin|yaml }}
+  {%- else %}
+  - contents: "<LoadPlugin {{ plugin.plugin }}>\n  Globals false\n</LoadPlugin>\n"
+  {%- endif %}
+  - user: root
+  - mode: 660
+  - require:
+    - file: collectd_client_conf_dir
+  - require_in:
+    - file: collectd_client_conf_dir_clean
+  - watch_in:
+    - service: collectd_service
+
+{%- endif %}
+
+{%- endfor %}
+
+{%- endif %}
 
 {%- if client.file_logging %}
 
@@ -138,7 +191,8 @@ collectd_client_grain_validity_check:
   - group: root
   - mode: 660
   - defaults:
-      plugin: {{ service_grains.collectd.plugin|yaml }}
+      local_plugin: {{ service_grains.collectd.local_plugin|yaml }}
+      remote_plugin: {{ remote_plugin|yaml }}
   - watch_in:
     - service: collectd_service
   - require:
@@ -183,6 +237,7 @@ collectd_client_grain_validity_check:
   - mode: 640
   - defaults:
     service_grains: {{ service_grains|yaml }}
+    remote_plugin: {{ remote_plugin|yaml }}
   - require:
     - file: collectd_client_conf_dir
   - require_in:

@@ -248,6 +248,7 @@ class HAProxyPlugin(base.Base):
             # NOLB/MAINT/MAINT(via)...
             if status in STATUS_MAP:
                 backend_server_states[pxname][status] += 1
+                backend_server_states[pxname]['_count'] += 1
                 # Emit metric for the backend server
                 yield {
                     'type_instance': 'backend_server',
@@ -261,9 +262,24 @@ class HAProxyPlugin(base.Base):
 
         for pxname, states in backend_server_states.iteritems():
             for s in STATUS_MAP.keys():
+                val = states.get(s, 0)
                 yield {
                     'type_instance': 'backend_servers',
-                    'values': states.get(s, 0),
+                    'values': val,
+                    'meta': {
+                        'backend': pxname,
+                        'state': s.lower()
+                    }
+                }
+
+                if backend_server_states[pxname]['_count'] == 0:
+                    prct = 0
+                else:
+                    prct = (100.0 * val) / \
+                        backend_server_states[pxname]['_count']
+                yield {
+                    'type_instance': 'backend_servers_percent',
+                    'values': prct,
                     'meta': {
                         'backend': pxname,
                         'state': s.lower()
@@ -291,10 +307,6 @@ class HAProxyPlugin(base.Base):
 plugin = HAProxyPlugin(collectd)
 
 
-def init_callback():
-    plugin.restore_sigchld()
-
-
 def config_callback(conf):
     plugin.config_callback(conf)
 
@@ -302,6 +314,5 @@ def config_callback(conf):
 def read_callback():
     plugin.read_callback()
 
-collectd.register_init(init_callback)
 collectd.register_config(config_callback)
 collectd.register_read(read_callback)

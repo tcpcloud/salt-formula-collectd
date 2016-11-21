@@ -1,11 +1,11 @@
 {%- from "collectd/map.jinja" import client with context %}
-{%- set service_grains = {'collectd': {'plugin': {}}} %}
+{%- set service_grains = {'collectd': {'local_plugin': {}}} %}
 {%- for service_name, service in pillar.items() %}
 {%- if service.get('_support', {}).get('collectd', {}).get('enabled', False) %}
 {%- set grains_fragment_file = service_name+'/meta/collectd.yml' %}
 {%- macro load_grains_file() %}{% include grains_fragment_file %}{% endmacro %}
 {%- set grains_yaml = load_grains_file()|load_yaml %}
-{%- set _dummy = service_grains.collectd.plugin.update(grains_yaml.plugin) %}
+{%- do service_grains.collectd.local_plugin.update(grains_yaml.get('local_plugin', {})) %}
 {%- endif %}
 {%- endfor %}
 doc:
@@ -21,4 +21,4 @@ doc:
           value: {{ backend.host }}:{{ backend.port }}
 {%- endfor %}
         plugins:
-          value: {% for plugin_name, plugin in service_grains.collectd.plugin.iteritems() %} {{ plugin.plugin }}{% endfor %}
+          value: {% for plugin_name, plugin in service_grains.collectd.local_plugin.iteritems() %} {{ plugin_name }}{% endfor %}
