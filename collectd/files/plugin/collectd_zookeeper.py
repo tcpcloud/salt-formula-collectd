@@ -25,6 +25,8 @@ also works with ZooKeeper 3.3.x but in a limited way.
 import collectd
 import socket
 
+# Default sampling interval
+INTERVAL = 50
 CONFIGS = []
 
 ZK_HOSTS = ["localhost"]
@@ -181,4 +183,4 @@ def log(msg):
 
 
 collectd.register_config(configure_callback)
-collectd.register_read(read_callback)
+collectd.register_read(read_callback, INTERVAL)
