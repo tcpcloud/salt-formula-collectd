@@ -64,9 +64,11 @@ class ZookeeperServer(object):
             response = s.recv(2048)
             s.close()
         except socket.timeout:
-            self._logger.error('Service not healthy: timed out calling "%s"' % cmd)
+            self._logger.error(('Service not healthy: '
+                                'timed out calling "%s"') % cmd)
         except socket.error, e:
-            self._logger.error('Service not healthy: error calling "%s": %s' % (cmd, e))
+            self._logger.error(('Service not healthy: '
+                                'error calling "%s": %s') % (cmd, e))
         return response
 
     def _get_health_stat(self):
@@ -105,6 +107,7 @@ class ZookeeperServer(object):
             pass
         return key, value
 
+
 class ZookeeperServerPlugin(base.Base):
 
     def __init__(self, *args, **kwargs):
@@ -129,7 +132,7 @@ class ZookeeperServerPlugin(base.Base):
                         val.dispatch()
                     except (TypeError, ValueError):
                         self.logger.error(('error dispatching stat; host=%s, '
-                             'key=%s, val=%s') % (host, k, v))
+                                           'key=%s, val=%s') % (host, k, v))
                         pass
         return stats
 
@@ -142,22 +145,23 @@ class ZookeeperServerPlugin(base.Base):
         for node in config.children:
             if node.key == 'Hosts':
                 if len(node.values[0]) > 0:
-                    zk_hosts = [host.strip() for host in node.values[0].split(',')]
+                    zk_hosts = [host.strip() for host in
+                                node.values[0].split(',')]
                 else:
                     self.logger.error(('ERROR: Invalid Hosts string. '
-                         'Using default of %s') % zk_hosts)
+                                       'Using default of %s') % zk_hosts)
             elif node.key == 'Port':
                 if isinstance(node.values[0], float) and node.values[0] > 0:
                     zk_port = node.values[0]
                 else:
                     self.logger.error(('ERROR: Invalid Port number. '
-                         'Using default of %s') % zk_port)
+                                       'Using default of %s') % zk_port)
             elif node.key == 'Instance':
                 if len(node.values[0]) > 0:
                     zk_instance = node.values[0]
                 else:
                     self.logger.error(('ERROR: Invalid Instance string. '
-                         'Using default of %s') % zk_instance)
+                                       'Using default of %s') % zk_instance)
             else:
                 collectd.warning('zookeeper plugin: Unknown config key: %s.'
                                  % node.key)
