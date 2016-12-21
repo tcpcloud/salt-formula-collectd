@@ -16,18 +16,14 @@
 # the License.
 
 """Check Zookeeper Cluster.
-
-Requires ZooKeeper 3.4.0 or greater. The script needs the 'mntr' 4-letter word
-command (patch ZOOKEEPER-744) that was now commited to the trunk. The script
-also works with ZooKeeper 3.3.x but in a limited way.
 """
 
 import collectd
+import collectd_base as base
 import socket
 
 # Default sampling interval
 INTERVAL = 50
-CONFIGS = []
 
 ZK_HOSTS = ["localhost"]
 ZK_PORT = 2181
@@ -39,9 +35,10 @@ IMOK_RESP = "imok"
 MNTR_CMD = "mntr"
 
 
-class ZooKeeperServer(object):
+class ZookeeperServer(object):
 
-    def __init__(self, host='localhost', port='2181', timeout=1):
+    def __init__(self, logger, host='localhost', port='2181', timeout=1):
+        self._logger = logger
         self._address = (host, int(port))
         self._timeout = timeout
 
@@ -60,20 +57,16 @@ class ZooKeeperServer(object):
         """Send a 4letter word command to the server."""
         response = ""
         s = self._create_socket()
-
         try:
             s.settimeout(self._timeout)
-
             s.connect(self._address)
             s.send(cmd)
-
             response = s.recv(2048)
             s.close()
         except socket.timeout:
-            log('Service not healthy: timed out calling "%s"' % cmd)
+            self._logger.error('Service not healthy: timed out calling "%s"' % cmd)
         except socket.error, e:
-            log('Service not healthy: error calling "%s": %s' % (cmd, e))
-
+            self._logger.error('Service not healthy: error calling "%s": %s' % (cmd, e))
         return response
 
     def _get_health_stat(self):
@@ -85,7 +78,6 @@ class ZooKeeperServer(object):
         """Send 'mntr' 4letter word command and parse the output."""
         response = self._send_cmd(MNTR_CMD)
         result = {}
-
         for line in response.splitlines():
             try:
                 key, value = self._parse_line(line)
@@ -98,7 +90,6 @@ class ZooKeeperServer(object):
             except ValueError:
                 # Ignore broken lines.
                 pass
-
         return result
 
     def _parse_line(self, line):
@@ -106,81 +97,92 @@ class ZooKeeperServer(object):
             key, value = map(str.strip, line.split('\t'))
         except ValueError:
             raise ValueError('Found invalid line: %s' % line)
-
         if not key:
             raise ValueError('The key is mandatory and should not be empty')
-
         try:
             value = int(value)
         except (TypeError, ValueError):
             pass
-
         return key, value
+
+class ZookeeperServerPlugin(base.Base):
+
+    def __init__(self, *args, **kwargs):
+        super(ZookeeperServerPlugin, self).__init__(*args, **kwargs)
+        self._configs = []
+
+    def read_callback(self):
+        """Get stats for all the servers in the cluster."""
+        stats = {}
+        for conf in self._configs:
+            for host in conf['hosts']:
+                zk = ZookeeperServer(self.logger, host, conf['port'])
+                stats = zk.get_stats()
+                for k, v in stats.items():
+                    try:
+                        val = collectd.Values(plugin='zookeeper',
+                                              meta={'0': True})
+                        val.type = 'counter' if k in COUNTERS else 'gauge'
+                        val.type_instance = k
+                        val.values = [v]
+                        val.plugin_instance = conf['instance']
+                        val.dispatch()
+                    except (TypeError, ValueError):
+                        self.logger.error(('error dispatching stat; host=%s, '
+                             'key=%s, val=%s') % (host, k, v))
+                        pass
+        return stats
+
+    def config_callback(self, config):
+        """Received configuration information"""
+        super(ZookeeperServerPlugin, self).config_callback(config)
+        zk_hosts = ZK_HOSTS
+        zk_port = ZK_PORT
+        zk_instance = ZK_INSTANCE
+        for node in config.children:
+            if node.key == 'Hosts':
+                if len(node.values[0]) > 0:
+                    zk_hosts = [host.strip() for host in node.values[0].split(',')]
+                else:
+                    self.logger.error(('ERROR: Invalid Hosts string. '
+                         'Using default of %s') % zk_hosts)
+            elif node.key == 'Port':
+                if isinstance(node.values[0], float) and node.values[0] > 0:
+                    zk_port = node.values[0]
+                else:
+                    self.logger.error(('ERROR: Invalid Port number. '
+                         'Using default of %s') % zk_port)
+            elif node.key == 'Instance':
+                if len(node.values[0]) > 0:
+                    zk_instance = node.values[0]
+                else:
+                    self.logger.error(('ERROR: Invalid Instance string. '
+                         'Using default of %s') % zk_instance)
+            else:
+                collectd.warning('zookeeper plugin: Unknown config key: %s.'
+                                 % node.key)
+                continue
+        conf = {'hosts': zk_hosts,
+                'port': zk_port,
+                'instance': zk_instance}
+        self.logger.info('Configured with %s.' % conf)
+        self._configs.append(conf)
+
+
+plugin = ZookeeperServerPlugin(collectd)
+
+
+def config_callback(conf):
+    plugin.config_callback(conf)
+
+
+def notification_callback(notification):
+    plugin.notification_callback(notification)
 
 
 def read_callback():
-    """Get stats for all the servers in the cluster."""
-    stats = {}
-    for conf in CONFIGS:
-        for host in conf['hosts']:
-            zk = ZooKeeperServer(host, conf['port'])
-            stats = zk.get_stats()
-            for k, v in stats.items():
-                try:
-                    val = collectd.Values(plugin='zookeeper',
-                                          meta={'0': True})
-                    val.type = 'counter' if k in COUNTERS else 'gauge'
-                    val.type_instance = k
-                    val.values = [v]
-                    val.plugin_instance = conf['instance']
-                    val.dispatch()
-                except (TypeError, ValueError):
-                    log(('error dispatching stat; host=%s, '
-                         'key=%s, val=%s') % (host, k, v))
-                    pass
+    plugin.conditional_read_callback()
 
-    return stats
-
-
-def configure_callback(conf):
-    """Received configuration information"""
-    zk_hosts = ZK_HOSTS
-    zk_port = ZK_PORT
-    zk_instance = ZK_INSTANCE
-    for node in conf.children:
-        if node.key == 'Hosts':
-            if len(node.values[0]) > 0:
-                zk_hosts = [host.strip() for host in node.values[0].split(',')]
-            else:
-                log(('ERROR: Invalid Hosts string. '
-                     'Using default of %s') % zk_hosts)
-        elif node.key == 'Port':
-            if isinstance(node.values[0], float) and node.values[0] > 0:
-                zk_port = node.values[0]
-            else:
-                log(('ERROR: Invalid Port number. '
-                     'Using default of %s') % zk_port)
-        elif node.key == 'Instance':
-            if len(node.values[0]) > 0:
-                zk_instance = node.values[0]
-            else:
-                log(('ERROR: Invalid Instance string. '
-                     'Using default of %s') % zk_instance)
-        else:
-            collectd.warning('zookeeper plugin: Unknown config key: %s.'
-                             % node.key)
-            continue
-
-    config = {'hosts': zk_hosts,
-              'port': zk_port,
-              'instance': zk_instance}
-    log('Configured with %s.' % config)
-    CONFIGS.append(config)
-
-
-def log(msg):
-    collectd.info('zookeeper plugin: %s' % msg)
-
-
-collectd.register_config(configure_callback)
+collectd.register_config(config_callback)
+collectd.register_notification(notification_callback)
 collectd.register_read(read_callback, INTERVAL)
